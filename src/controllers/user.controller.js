@@ -20,17 +20,20 @@ exports.getMe = async (req, res) => {
         }
 
         // Get stats
-        const [eventsAttended, eventsHosted] = await Promise.all([
+        const [eventsAttended, eventsHosted, clubsJoined] = await Promise.all([
             supabaseAdmin
                 .from('rsvps')
                 .select('id', { count: 'exact' })
                 .eq('user_id', req.user.id)
-                .eq('checked_in', true),
+                .eq('status', 'confirmed'),
             supabaseAdmin
                 .from('events')
                 .select('id', { count: 'exact' })
-                .eq('host_id', req.user.id)
-                .eq('status', 'completed')
+                .eq('host_id', req.user.id),
+            supabaseAdmin
+                .from('user_clubs')
+                .select('id', { count: 'exact' })
+                .eq('user_id', req.user.id)
         ]);
 
         return success(res, {
@@ -40,7 +43,8 @@ exports.getMe = async (req, res) => {
             badges: profile.user_badges?.map(ub => ub.badge) || [],
             stats: {
                 events_attended: eventsAttended.count || 0,
-                events_hosted: eventsHosted.count || 0
+                events_hosted: eventsHosted.count || 0,
+                clubs_joined: clubsJoined.count || 0
             }
         });
     } catch (err) {

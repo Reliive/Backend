@@ -22,6 +22,9 @@ const optionalAuth = async (req, res, next) => {
 // GET /api/v1/events
 router.get('/', optionalAuth, paginationQuery, validate, eventController.listEvents);
 
+// GET /api/v1/events/my - User's events (hosting + RSVPed)
+router.get('/my', authenticate, eventController.getMyEvents);
+
 // POST /api/v1/events
 router.post('/', authenticate, createEventValidator, validate, eventController.createEvent);
 
