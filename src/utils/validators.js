@@ -42,7 +42,7 @@ const interestsValidator = [
 // Event validators
 const createEventValidator = [
     body('title').notEmpty().withMessage('Title required').trim(),
-    body('club_id').isUUID().withMessage('Valid club ID required'),
+    body('club_id').optional({ nullable: true }).isUUID().withMessage('Invalid club ID'),
     body('starts_at').isISO8601().withMessage('Valid start date required'),
     body('ends_at').optional().isISO8601().withMessage('Invalid end date'),
     body('capacity').optional().isInt({ min: 1 }).withMessage('Capacity must be positive'),

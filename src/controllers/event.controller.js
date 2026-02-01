@@ -6,7 +6,7 @@ exports.listEvents = async (req, res) => {
     try {
         const limit = Math.min(parseInt(req.query.limit) || 20, 50);
         const offset = parseInt(req.query.offset) || 0;
-        const { club_id, type, upcoming, featured } = req.query;
+        const { club_id, club_slug, type, upcoming, featured } = req.query;
 
         let query = supabaseAdmin
             .from('events')
@@ -18,7 +18,26 @@ exports.listEvents = async (req, res) => {
       `, { count: 'exact' })
             .eq('status', 'published');
 
-        if (club_id) query = query.eq('club_id', club_id);
+        // Filter by club_id if provided
+        if (club_id) {
+            query = query.eq('club_id', club_id);
+        }
+        // Filter by club_slug if provided (lookup club first)
+        else if (club_slug) {
+            const { data: club } = await supabaseAdmin
+                .from('clubs')
+                .select('id')
+                .eq('slug', club_slug)
+                .single();
+
+            if (club) {
+                query = query.eq('club_id', club.id);
+            } else {
+                // No matching club, return empty results
+                return paginated(res, [], 0, limit, offset);
+            }
+        }
+
         if (type === 'free' || type === 'paid') query = query.eq('event_type', type);
         if (upcoming !== 'false') query = query.gte('starts_at', new Date().toISOString());
         if (featured === 'true') query = query.eq('is_featured', true);
@@ -62,37 +81,40 @@ exports.createEvent = async (req, res) => {
         const {
             title, description, club_id, event_type, starts_at, ends_at,
             location_name, location_address, location_lat, location_lng,
-            capacity, price, images, tags, accessibility_notes, cancellation_policy
+            capacity, price, images, tags, accessibility_notes, cancellation_policy,
+            neighborhood, category, status
         } = req.body;
 
-        // Verify club exists
-        const { data: club } = await supabaseAdmin
-            .from('clubs')
-            .select('id')
-            .eq('id', club_id)
-            .single();
+        // Verify club exists (only if club_id is provided)
+        if (club_id) {
+            const { data: club } = await supabaseAdmin
+                .from('clubs')
+                .select('id')
+                .eq('id', club_id)
+                .single();
 
-        if (!club) {
-            return error(res, 'Club not found', 404);
+            if (!club) {
+                return error(res, 'Club not found', 404);
+            }
         }
 
         const eventData = {
             host_id: req.user.id,
-            club_id,
+            club_id: club_id || null,
             title: title.trim(),
             description: description?.trim() || null,
             event_type: event_type || 'free',
-            status: 'draft',
+            status: status || 'published', // Default to published
             starts_at,
             ends_at: ends_at || null,
-            location_name: location_name?.trim() || null,
+            location_name: location_name?.trim() || neighborhood || null,
             location_address: location_address?.trim() || null,
             location_lat: location_lat || null,
             location_lng: location_lng || null,
             capacity: capacity || 20,
             price: event_type === 'paid' ? (price || 0) : 0,
             images: images || [],
-            tags: tags || [],
+            tags: tags || (category ? [category] : []),
             accessibility_notes: accessibility_notes || null,
             cancellation_policy: cancellation_policy || null
         };
@@ -117,6 +139,63 @@ exports.createEvent = async (req, res) => {
         return success(res, event, 'Event created', 201);
     } catch (err) {
         console.error('Create event error:', err);
+        return error(res, err.message, 500);
+    }
+};
+
+// Get user's events (hosting + RSVPed)
+exports.getMyEvents = async (req, res) => {
+    try {
+        const now = new Date().toISOString();
+
+        // Get events user is hosting
+        const { data: hostingEvents } = await supabaseAdmin
+            .from('events')
+            .select(`
+                id, title, description, event_type, status, starts_at, ends_at,
+                location_name, capacity, rsvp_count, price
+            `)
+            .eq('host_id', req.user.id)
+            .in('status', ['draft', 'published'])
+            .order('starts_at', { ascending: true });
+
+        // Get events user has RSVPed to
+        const { data: rsvps } = await supabaseAdmin
+            .from('rsvps')
+            .select(`
+                id, status,
+                event:events(
+                    id, title, description, event_type, status, starts_at, ends_at,
+                    location_name, capacity, rsvp_count, price,
+                    host:users!host_id(id, name, avatar_url)
+                )
+            `)
+            .eq('user_id', req.user.id)
+            .in('status', ['confirmed', 'waitlist']);
+
+        // Separate upcoming and past
+        const upcomingHosting = (hostingEvents || []).filter(e => new Date(e.starts_at) >= new Date(now));
+        const pastHosting = (hostingEvents || []).filter(e => new Date(e.starts_at) < new Date(now));
+
+        const attendingEvents = (rsvps || [])
+            .filter(r => r.event)
+            .map(r => ({ ...r.event, rsvp_status: r.status }));
+
+        const upcomingAttending = attendingEvents.filter(e => new Date(e.starts_at) >= new Date(now));
+        const pastAttending = attendingEvents.filter(e => new Date(e.starts_at) < new Date(now));
+
+        return success(res, {
+            hosting: {
+                upcoming: upcomingHosting,
+                past: pastHosting
+            },
+            attending: {
+                upcoming: upcomingAttending,
+                past: pastAttending
+            }
+        });
+    } catch (err) {
+        console.error('Get my events error:', err);
         return error(res, err.message, 500);
     }
 };
@@ -322,12 +401,17 @@ exports.rsvp = async (req, res) => {
         // Get event
         const { data: event } = await supabaseAdmin
             .from('events')
-            .select('id, status, event_type, capacity, rsvp_count, starts_at')
+            .select('id, host_id, status, event_type, capacity, rsvp_count, starts_at')
             .eq('id', id)
             .single();
 
         if (!event) {
             return error(res, 'Event not found', 404);
+        }
+
+        // Prevent host from RSVPing to their own event
+        if (event.host_id === req.user.id) {
+            return error(res, 'You cannot RSVP to your own event');
         }
 
         if (event.status !== 'published') {
@@ -382,6 +466,14 @@ exports.rsvp = async (req, res) => {
             return error(res, insertError.message);
         }
 
+        // Increment rsvp_count on event if confirmed
+        if (status === 'confirmed') {
+            await supabaseAdmin
+                .from('events')
+                .update({ rsvp_count: (event.rsvp_count || 0) + 1 })
+                .eq('id', id);
+        }
+
         return success(res, rsvp, status === 'confirmed' ? 'RSVP confirmed!' : 'Added to waitlist', 201);
     } catch (err) {
         console.error('RSVP error:', err);
@@ -396,7 +488,7 @@ exports.cancelRsvp = async (req, res) => {
 
         const { data: rsvp } = await supabaseAdmin
             .from('rsvps')
-            .select('id')
+            .select('id, status')
             .eq('event_id', id)
             .eq('user_id', req.user.id)
             .single();
@@ -405,6 +497,8 @@ exports.cancelRsvp = async (req, res) => {
             return error(res, 'RSVP not found', 404);
         }
 
+        const wasConfirmed = rsvp.status === 'confirmed';
+
         const { error: dbError } = await supabaseAdmin
             .from('rsvps')
             .update({ status: 'cancelled' })
@@ -412,6 +506,22 @@ exports.cancelRsvp = async (req, res) => {
 
         if (dbError) {
             return error(res, dbError.message);
+        }
+
+        // Decrement rsvp_count if was confirmed
+        if (wasConfirmed) {
+            const { data: event } = await supabaseAdmin
+                .from('events')
+                .select('rsvp_count')
+                .eq('id', id)
+                .single();
+
+            if (event) {
+                await supabaseAdmin
+                    .from('events')
+                    .update({ rsvp_count: Math.max(0, (event.rsvp_count || 1) - 1) })
+                    .eq('id', id);
+            }
         }
 
         return success(res, null, 'RSVP cancelled');
