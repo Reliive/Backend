@@ -19,8 +19,26 @@ const app = express();
 
 // Middleware
 app.use(helmet());
+// CORS configuration - allow multiple origins for web and mobile
+const allowedOrigins = [
+    'http://localhost:5173',    // Vite dev server
+    'http://localhost',         // Capacitor Android/iOS
+    'capacitor://localhost',    // Capacitor iOS
+    'http://localhost:3000',    // Alternative dev port
+];
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.log('CORS blocked origin:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
 }));
 app.use(morgan('dev'));
