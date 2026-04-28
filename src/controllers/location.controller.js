@@ -16,13 +16,14 @@ exports.updateLocation = async (req, res) => {
         const { latitude, longitude } = req.body;
 
         // 1. Reverse geocode via OpenStreetMap Nominatim (free, no API key)
+        let locality = null;
         let city = null;
         let state = null;
         let country = null;
         let locationName = null;
 
         try {
-            const nominatimUrl = `${NOMINATIM_BASE}/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1&zoom=14`;
+            const nominatimUrl = `${NOMINATIM_BASE}/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1&namedetails=1&zoom=18`;
 
             const response = await fetch(nominatimUrl, {
                 headers: {
@@ -37,10 +38,31 @@ exports.updateLocation = async (req, res) => {
                 const data = await response.json();
                 const addr = data.address || {};
 
-                city = addr.city || addr.town || addr.village || addr.municipality || addr.suburb || null;
-                state = addr.state || addr.state_district || addr.region || null;
+                // Extract locality (most granular area)
+                // For India: county = tehsil/subdivision (e.g. "Mohanlalganj")
+                locality = addr.suburb
+                    || addr.neighbourhood
+                    || addr.quarter
+                    || addr.hamlet
+                    || addr.county
+                    || null;
+
+                // Extract city
+                // For India: state_district = district name which is the city (e.g. "Lucknow")
+                city = addr.city
+                    || addr.town
+                    || addr.city_district
+                    || addr.state_district
+                    || addr.village
+                    || addr.municipality
+                    || null;
+
+                // state_district is used for city above, so don't use it here
+                state = addr.state || addr.region || null;
                 country = addr.country || null;
-                locationName = [city, state, country].filter(Boolean).join(', ');
+
+                // Build human-readable name including locality
+                locationName = [locality, city, state, country].filter(Boolean).join(', ');
             }
         } catch (geoErr) {
             console.error('Nominatim reverse geocoding failed:', geoErr.message);
@@ -50,6 +72,7 @@ exports.updateLocation = async (req, res) => {
         const updateData = {
             location_lat: latitude,
             location_lng: longitude,
+            location_locality: locality,
             location_city: city,
             location_state: state,
             location_country: country,
@@ -81,6 +104,7 @@ exports.updateLocation = async (req, res) => {
         return success(res, {
             location_lat: latitude,
             location_lng: longitude,
+            location_locality: locality,
             location_city: city,
             location_state: state,
             location_country: country,
