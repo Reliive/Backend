@@ -1,5 +1,33 @@
 const { body, param, query } = require('express-validator');
 
+// Location validators
+const locationUpdateValidator = [
+    body('latitude')
+        .notEmpty().withMessage('Latitude required')
+        .isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    body('longitude')
+        .notEmpty().withMessage('Longitude required')
+        .isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+];
+
+const locationNearbyValidator = [
+    query('lat')
+        .notEmpty().withMessage('Latitude required')
+        .isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    query('lng')
+        .notEmpty().withMessage('Longitude required')
+        .isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
+    query('radius_km')
+        .optional()
+        .isFloat({ min: 1, max: 500 }).withMessage('Radius must be between 1 and 500 km'),
+    query('limit')
+        .optional()
+        .isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+    query('offset')
+        .optional()
+        .isInt({ min: 0 }).withMessage('Offset must be non-negative'),
+];
+
 // Auth validators
 const signupValidator = [
     body('email').isEmail().withMessage('Valid email required'),
@@ -30,7 +58,15 @@ const resetPasswordValidator = [
 const updateProfileValidator = [
     body('name').optional().isString().trim(),
     body('avatar_url').optional().isURL().withMessage('Invalid avatar URL'),
-    body('neighborhood').optional().isString().trim()
+    body('neighborhood').optional().isString().trim(),
+    // Location fields
+    body('location_name').optional().isString().trim(),
+    body('location_city').optional().isString().trim(),
+    body('location_state').optional().isString().trim(),
+    body('location_country').optional().isString().trim(),
+    body('location_country_code').optional().isString().isLength({ max: 10 }),
+    body('location_lat').optional().isFloat({ min: -90, max: 90 }).withMessage('Invalid latitude'),
+    body('location_lng').optional().isFloat({ min: -180, max: 180 }).withMessage('Invalid longitude'),
 ];
 
 const interestsValidator = [
@@ -114,5 +150,7 @@ module.exports = {
     partnerRegisterValidator,
     createReportValidator,
     uuidParam,
-    paginationQuery
+    paginationQuery,
+    locationUpdateValidator,
+    locationNearbyValidator,
 };

@@ -56,7 +56,21 @@ exports.getMe = async (req, res) => {
 // Update current user profile
 exports.updateMe = async (req, res) => {
     try {
-        const { name, avatar_url, neighborhood, accessibility_prefs, emergency_contact } = req.body;
+        const {
+            name,
+            avatar_url,
+            neighborhood,
+            accessibility_prefs,
+            emergency_contact,
+            // Location fields
+            location_name,
+            location_city,
+            location_state,
+            location_country,
+            location_country_code,
+            location_lat,
+            location_lng,
+        } = req.body;
 
         const updateData = {};
         if (name) updateData.name = name.trim();
@@ -65,6 +79,16 @@ exports.updateMe = async (req, res) => {
         if (accessibility_prefs) updateData.accessibility_prefs = accessibility_prefs;
         if (emergency_contact) updateData.emergency_contact = emergency_contact;
 
+        // Location fields (allow explicit null to clear)
+        if (location_name !== undefined) updateData.location_name = location_name;
+        if (location_city !== undefined) updateData.location_city = location_city;
+        if (location_state !== undefined) updateData.location_state = location_state;
+        if (location_country !== undefined) updateData.location_country = location_country;
+        if (location_country_code !== undefined) updateData.location_country_code = location_country_code;
+        if (location_lat !== undefined) updateData.location_lat = location_lat;
+        if (location_lng !== undefined) updateData.location_lng = location_lng;
+
+        // 1. Update scalar fields
         const { data, error: dbError } = await supabaseAdmin
             .from('users')
             .update(updateData)
@@ -74,6 +98,20 @@ exports.updateMe = async (req, res) => {
 
         if (dbError) {
             return error(res, dbError.message);
+        }
+
+        // 2. If lat/lng provided, update PostGIS geography point via dedicated SQL function
+        if (location_lat != null && location_lng != null) {
+            const { error: geoError } = await supabaseAdmin.rpc('update_user_location_point', {
+                p_user_id: req.user.id,
+                p_lat: parseFloat(location_lat),
+                p_lng: parseFloat(location_lng),
+            });
+
+            if (geoError) {
+                console.error('PostGIS point update error:', geoError);
+                // Non-fatal: scalar fields are already saved
+            }
         }
 
         return success(res, data, 'Profile updated');

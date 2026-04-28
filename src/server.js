@@ -15,6 +15,7 @@ const partnerRoutes = require('./routes/partner.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const adminRoutes = require('./routes/admin.routes');
 const configRoutes = require('./routes/config.routes');
+const locationRoutes = require('./routes/location.routes');
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.use('/api/v1/partners', partnerRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/config', configRoutes);
+app.use('/api/v1/location', locationRoutes);
 
 // 404 handler
 app.use((req, res) => {
