@@ -245,12 +245,12 @@ exports.getEvent = async (req, res) => {
             }
         }
 
-        // Get host stats
+        // Get host stats (count published & completed events hosted by this user)
         const { count: hostEventsCount } = await supabaseAdmin
             .from('events')
             .select('id', { count: 'exact' })
             .eq('host_id', event.host_id)
-            .eq('status', 'completed');
+            .in('status', ['published', 'completed']);
 
         return success(res, {
             ...event,
