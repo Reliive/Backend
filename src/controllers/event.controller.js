@@ -50,7 +50,7 @@ exports.listEvents = async (req, res) => {
             return error(res, dbError.message);
         }
 
-        // Check user RSVPs if authenticated
+        // Check user RSVPs if authenticated (only active confirmed or waitlist RSVPs)
         let eventsWithRsvp = events;
         if (req.user && events?.length) {
             const eventIds = events.map(e => e.id);
@@ -58,6 +58,7 @@ exports.listEvents = async (req, res) => {
                 .from('rsvps')
                 .select('event_id, status')
                 .eq('user_id', req.user.id)
+                .in('status', ['confirmed', 'waitlist'])
                 .in('event_id', eventIds);
 
             const rsvpMap = new Map(rsvps?.map(r => [r.event_id, r.status]) || []);
@@ -229,7 +230,8 @@ exports.getEvent = async (req, res) => {
                 .select('*')
                 .eq('event_id', id)
                 .eq('user_id', req.user.id)
-                .single();
+                .in('status', ['confirmed', 'waitlist'])
+                .maybeSingle();
             userRsvp = rsvp;
 
             if (event.event_type === 'paid') {
@@ -449,6 +451,19 @@ exports.rsvp = async (req, res) => {
                 .single();
 
             if (updateError) return error(res, updateError.message);
+
+            // Sync actual confirmed rsvp_count on event
+            const { count: actualCount } = await supabaseAdmin
+                .from('rsvps')
+                .select('id', { count: 'exact' })
+                .eq('event_id', id)
+                .eq('status', 'confirmed');
+
+            await supabaseAdmin
+                .from('events')
+                .update({ rsvp_count: actualCount || 0 })
+                .eq('id', id);
+
             return success(res, rsvp, status === 'confirmed' ? 'RSVP confirmed!' : 'Added to waitlist');
         }
 
@@ -466,13 +481,17 @@ exports.rsvp = async (req, res) => {
             return error(res, insertError.message);
         }
 
-        // Increment rsvp_count on event if confirmed
-        if (status === 'confirmed') {
-            await supabaseAdmin
-                .from('events')
-                .update({ rsvp_count: (event.rsvp_count || 0) + 1 })
-                .eq('id', id);
-        }
+        // Sync actual confirmed rsvp_count on event
+        const { count: actualCount } = await supabaseAdmin
+            .from('rsvps')
+            .select('id', { count: 'exact' })
+            .eq('event_id', id)
+            .eq('status', 'confirmed');
+
+        await supabaseAdmin
+            .from('events')
+            .update({ rsvp_count: actualCount || 0 })
+            .eq('id', id);
 
         return success(res, rsvp, status === 'confirmed' ? 'RSVP confirmed!' : 'Added to waitlist', 201);
     } catch (err) {
@@ -508,21 +527,17 @@ exports.cancelRsvp = async (req, res) => {
             return error(res, dbError.message);
         }
 
-        // Decrement rsvp_count if was confirmed
-        if (wasConfirmed) {
-            const { data: event } = await supabaseAdmin
-                .from('events')
-                .select('rsvp_count')
-                .eq('id', id)
-                .single();
+        // Sync actual confirmed rsvp_count on event
+        const { count: actualCount } = await supabaseAdmin
+            .from('rsvps')
+            .select('id', { count: 'exact' })
+            .eq('event_id', id)
+            .eq('status', 'confirmed');
 
-            if (event) {
-                await supabaseAdmin
-                    .from('events')
-                    .update({ rsvp_count: Math.max(0, (event.rsvp_count || 1) - 1) })
-                    .eq('id', id);
-            }
-        }
+        await supabaseAdmin
+            .from('events')
+            .update({ rsvp_count: actualCount || 0 })
+            .eq('id', id);
 
         return success(res, null, 'RSVP cancelled');
     } catch (err) {
