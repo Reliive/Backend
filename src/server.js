@@ -27,6 +27,8 @@ const allowedOrigins = [
     'http://localhost',         // Capacitor Android/iOS
     'capacitor://localhost',    // Capacitor iOS
     'http://localhost:3000',    // Alternative dev port
+    'http://localhost:8081',    // Expo Metro Dev Server (web)
+    'http://127.0.0.1:8081',    // Expo Metro Dev Server (alternate)
 ];
 
 app.use(cors({
