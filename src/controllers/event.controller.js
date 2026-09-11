@@ -547,11 +547,15 @@ exports.checkIn = async (req, res) => {
             return error(res, 'Event not found', 404);
         }
 
-        // Allow check-in 30 min before
+        // Allow check-in for target user (either current user or specified attendee user_id by host)
+        const targetUserId = req.body?.user_id || req.user.id;
+        const isHost = event.host_id === req.user.id;
+
+        // Allow check-in 30 min before for attendees, or anytime for host
         const eventStart = new Date(event.starts_at);
         const checkInWindow = new Date(eventStart.getTime() - 30 * 60 * 1000);
 
-        if (new Date() < checkInWindow) {
+        if (!isHost && new Date() < checkInWindow) {
             return error(res, 'Check-in not yet available');
         }
 
@@ -560,7 +564,7 @@ exports.checkIn = async (req, res) => {
             .from('rsvps')
             .select('id, checked_in')
             .eq('event_id', id)
-            .eq('user_id', req.user.id)
+            .eq('user_id', targetUserId)
             .eq('status', 'confirmed')
             .single();
 
