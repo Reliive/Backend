@@ -36,7 +36,9 @@ app.use(cors({
         // Allow requests with no origin (like mobile apps, curl, Postman)
         if (!origin) return callback(null, true);
         
-        if (allowedOrigins.includes(origin)) {
+        // Allow listed origins or any localhost/127.0.0.1 port in development
+        const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+        if (allowedOrigins.includes(origin) || (process.env.NODE_ENV !== 'production' && isLocalhost)) {
             callback(null, true);
         } else {
             console.log('CORS blocked origin:', origin);
@@ -47,6 +49,19 @@ app.use(cors({
 }));
 app.use(morgan('dev'));
 app.use(express.json());
+
+// Root welcome route
+app.get('/', (req, res) => {
+    res.json({
+        name: 'Reliive Backend API',
+        status: 'online',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+            health: '/health',
+            api: '/api/v1'
+        }
+    });
+});
 
 // Health check
 app.get('/health', (req, res) => {
