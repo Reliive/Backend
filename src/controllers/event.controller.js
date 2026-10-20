@@ -479,7 +479,19 @@ exports.rsvp = async (req, res) => {
             .single();
 
         if (insertError) {
-            return error(res, insertError.message);
+            console.error('RSVP insert failed:', {
+                code: insertError.code,
+                message: insertError.message,
+                details: insertError.details,
+                hint: insertError.hint
+            });
+            return error(
+                res,
+                insertError.code === '42501'
+                    ? 'RSVP could not be created because database permissions rejected the insert. Verify the deployed rsvps RLS policies and backend service-role configuration.'
+                    : insertError.message,
+                insertError.code === '42501' ? 500 : 400
+            );
         }
 
         // Sync actual confirmed rsvp_count on event
