@@ -127,6 +127,7 @@ exports.createEvent = async (req, res) => {
             .single();
 
         if (dbError) {
+            console.error('❌ Create event dbError:', dbError);
             return error(res, dbError.message);
         }
 
